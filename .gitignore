@@ -1,6 +1,6 @@
 *.env
 whitewall-access/config.staging.json
+whitewall-access/config.production.json
 secrets.yaml
 project.yaml
 *.wasm
-config.production.json
