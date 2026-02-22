@@ -1,44 +1,145 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func main() {
-	http.HandleFunc("/cre/access", handleAccessRequest)
+// authorizedKeys (workflow.yaml과 동일하게)
+var authorizedSigners = map[string]bool{
+	"0x0d10f69243b8a2fe4299fa4cc115c3023f4011cf": true,
+}
 
+// JSON-RPC 요청 구조체
+type JSONRPCRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  struct {
+		WorkflowID string                 `json:"workflow_id"`
+		Input      map[string]interface{} `json:"input"`
+		Signature  string                 `json:"signature"`
+		Signer     string                 `json:"signer"`
+	} `json:"params"`
+	ID int `json:"id"`
+}
+
+// JSON-RPC 응답 구조체
+type JSONRPCResponse struct {
+	JSONRPC string      `json:"jsonrpc"`
+	Result  interface{} `json:"result,omitempty"`
+	Error   *RPCError   `json:"error,omitempty"`
+	ID      int         `json:"id"`
+}
+
+type RPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// AccessReport 결과
+type AccessResult struct {
+	AgentID          int    `json:"agentId"`
+	Approved         bool   `json:"approved"`
+	Tier             int    `json:"tier"`
+	AccountableHuman string `json:"accountableHuman"`
+	Reason           string `json:"reason"`
+}
+
+func main() {
+
+	http.HandleFunc("/trigger", handleAccessRequest)
 	fmt.Println("CRE Wrapper Server running on :8080")
+	fmt.Println("   Endpoint: POST /trigger")
 	http.ListenAndServe(":8080", nil)
 }
 
 func handleAccessRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	// 1. POST만 허용
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		sendError(w, -32600, "Method not allowed", 0)
 		return
 	}
 
-	// 2. 요청 Body 읽기
-	var payload map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	// 2. JSON-RPC 요청 파싱
+	var req JSONRPCRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, -32700, "Parse error", 0)
 		return
 	}
 
-	// 3. JSON 파일로 저장 (cre simulate가 읽을 수 있게)
-	payloadBytes, _ := json.Marshal(payload)
+	// 3. 메서드 확인
+	if req.Method != "workflow_execute" {
+		sendError(w, -32601, "Method not found", req.ID)
+		return
+	}
+
+	// 4. Signer 검증 (authorizedKeys 체크)
+	signerLower := strings.ToLower(req.Params.Signer)
+	if !authorizedSigners[signerLower] {
+		sendError(w, -32000, "Unauthorized signer", req.ID)
+		return
+	}
+
+	// 5. 서명 검증
+	if !verifySignature(req.Params.Input, req.Params.Signature, req.Params.Signer) {
+		sendError(w, -32001, "Invalid signature", req.ID)
+		return
+	}
+
+	// 5. agentId 추출
+	agentIdFloat, ok := req.Params.Input["agentId"].(float64)
+	if !ok {
+		sendError(w, -32602, "Invalid params: agentId required", req.ID)
+		return
+	}
+	agentId := int(agentIdFloat)
+
+	// 6. CRE simulate 실행
+	result, err := runCRESimulate(agentId)
+	if err != nil {
+		sendError(w, -32000, err.Error(), req.ID)
+		return
+	}
+	// 7. 성공 응답
+	json.NewEncoder(w).Encode(JSONRPCResponse{
+		JSONRPC: "2.0",
+		Result:  result,
+		ID:      req.ID,
+	})
+
+}
+
+// CRE 출력 파싱용 구조체
+type CREOutput struct {
+	AccountableHuman string `json:"AccountableHuman"` // base64
+	AgentID          int    `json:"AgentID"`
+	Approved         bool   `json:"Approved"`
+	Reason           string `json:"Reason"` // base64
+	Tier             int    `json:"Tier"`
+}
+
+func runCRESimulate(agentId int) (*AccessResult, error) {
+	// JSON 페이로드 생성
+	payload := fmt.Sprintf(`{"agentId": %d}`, agentId)
 	tmpFile := "/tmp/cre_payload.json"
-	os.WriteFile(tmpFile, payloadBytes, 0644)
+	os.WriteFile(tmpFile, []byte(payload), 0644)
 
-	// 4. 프로젝트 루트 경로 (cre-wrapper 상위 폴더)
+	// 프로젝트 루트
 	projectRoot, _ := filepath.Abs("..")
 
-	// 5. cre simulate 실행
+	// cre simulate 실행
 	cmd := exec.Command("cre", "workflow", "simulate",
 		"whitewall-access",
 		"--target", "staging-settings",
@@ -49,24 +150,94 @@ func handleAccessRequest(w http.ResponseWriter, r *http.Request) {
 	cmd.Dir = projectRoot
 
 	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+	fmt.Printf("CRE 출력:\n%s\n", outputStr)
 
-	//결과 반환
-	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		fmt.Printf("CRE Error: %v\n", err)
-		fmt.Printf("Output: %s\n", string(output))
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-			"output":  string(output),
-		})
-		return
+		return nil, fmt.Errorf("CRE execution failed: %v", err)
 	}
 
-	fmt.Printf("CRE Success\n")
-	fmt.Printf("Output: %s\n", string(output))
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"output":  string(output),
+	// JSON 부분 추출 (Workflow Simulation Result: 이후)
+	re := regexp.MustCompile(`Workflow Simulation Result:\s*(\{[\s\S]*?\})`)
+	matches := re.FindStringSubmatch(outputStr)
+	if len(matches) < 2 {
+		return nil, fmt.Errorf("Failed to parse CRE output")
+	}
+
+	// JSON 파싱
+	var creOutput CREOutput
+	if err := json.Unmarshal([]byte(matches[1]), &creOutput); err != nil {
+		return nil, fmt.Errorf("Failed to parse JSON: %v", err)
+	}
+
+	// base64 → hex 변환 (AccountableHuman)
+	addrBytes, _ := base64.StdEncoding.DecodeString(creOutput.AccountableHuman)
+	accountableHuman := "0x" + hex.EncodeToString(addrBytes)
+
+	// base64 → hex 변환 (Reason)
+	reasonBytes, _ := base64.StdEncoding.DecodeString(creOutput.Reason)
+	reason := "0x" + hex.EncodeToString(reasonBytes)
+
+	return &AccessResult{
+		AgentID:          creOutput.AgentID,
+		Approved:         creOutput.Approved,
+		Tier:             creOutput.Tier,
+		AccountableHuman: accountableHuman,
+		Reason:           reason,
+	}, nil
+}
+
+func sendError(w http.ResponseWriter, code int, message string, id int) {
+	json.NewEncoder(w).Encode(JSONRPCResponse{
+		JSONRPC: "2.0",
+		Error: &RPCError{
+			Code:    code,
+			Message: message,
+		},
+		ID: id,
 	})
+}
+
+func verifySignature(input map[string]interface{}, signature string, signer string) bool {
+	// 1. 입력 데이터를 JSON으로 직렬화
+	message, err := json.Marshal(input)
+	if err != nil {
+		fmt.Println("Failed to marshal input")
+		return false
+	}
+
+	// 2. Ethereum 서명 메시지 형식으로 해시
+	prefix := fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))
+	hash := crypto.Keccak256Hash([]byte(prefix + string(message)))
+
+	// 3. 서명 디코딩
+	sigBytes := common.FromHex(signature)
+	if len(sigBytes) != 65 {
+		fmt.Println("Invalid signature length")
+		return false
+	}
+
+	// 4. recovery id 조정 (27, 28 -> 0, 1)
+	if sigBytes[64] >= 27 {
+		sigBytes[64] -= 27
+	}
+
+	// 5. 서명에서 공개키 복구
+	pubKey, err := crypto.SigToPub(hash.Bytes(), sigBytes)
+	if err != nil {
+		fmt.Println("Failed to recover public key:", err)
+		return false
+	}
+
+	// 6. 공개키에서 주소 추출
+	recoveredAddr := crypto.PubkeyToAddress(*pubKey)
+
+	// 7. 예상 주소와 비교
+	expectedAddr := common.HexToAddress(signer)
+	isValid := recoveredAddr == expectedAddr
+
+	fmt.Printf("서명 검증: recovered=%s, expected=%s, valid=%v\n",
+		recoveredAddr.Hex(), expectedAddr.Hex(), isValid)
+
+	return isValid
 }
