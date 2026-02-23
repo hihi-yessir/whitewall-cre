@@ -17,6 +17,8 @@ production-settings:
 
 capabilities:
   - name: "evm-read"
+  - name: "evm-write"
+  - name: "report-encoder"
 
 authorizedKeys:
   - "0x0d10F69243B8A2FE4299FA4cC115c3023F4011CF"
