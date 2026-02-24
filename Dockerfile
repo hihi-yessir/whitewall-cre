@@ -37,8 +37,7 @@ WORKDIR /app
 # 빌드된 서버 복사
 COPY --from=builder /app/server ./server
 
-# CRE 프로젝트 설정 및 워크플로우 복사
-COPY project.yaml ./project.yaml
+# CRE 워크플로우 복사 (project.yaml은 환경변수에서 생성)
 COPY whitewall-access/ ./whitewall-access/
 
 # 환경변수 설정
@@ -46,18 +45,22 @@ ENV PORT=8080
 ENV CRE_PROJECT_ROOT=/app
 ENV CRE_ETH_PRIVATE_KEY=""
 ENV CRE_CREDENTIALS=""
+ENV CRE_PROJECT_YAML=""
 ENV CRE_TARGET="staging-settings"
 
 # 포트 노출구
 EXPOSE 8080
 
-# 시작 스크립트 생성 (CRE credentials 설정 후 서버 실행)
-# CRE_CREDENTIALS는 base64로 인코딩된 cre.yaml 내용
+# 시작 스크립트 생성 (CRE credentials + project.yaml 설정 후 서버 실행)
 RUN echo '#!/bin/bash\n\
 if [ -n "$CRE_CREDENTIALS" ]; then\n\
   mkdir -p /root/.cre\n\
   echo "$CRE_CREDENTIALS" | base64 -d > /root/.cre/cre.yaml\n\
   echo "CRE credentials configured"\n\
+fi\n\
+if [ -n "$CRE_PROJECT_YAML" ]; then\n\
+  echo "$CRE_PROJECT_YAML" | base64 -d > /app/project.yaml\n\
+  echo "CRE project.yaml configured"\n\
 fi\n\
 exec ./server' > /app/start.sh && chmod +x /app/start.sh
 

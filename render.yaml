@@ -13,7 +13,9 @@ services:
       - key: CRE_ETH_PRIVATE_KEY
         sync: false  # Manual input required (secret)
       - key: CRE_CREDENTIALS
-        sync: false  # cre.yaml 내용 (cre login 후 ~/.cre/cre.yaml)
+        sync: false  # base64: ~/.cre/cre.yaml
+      - key: CRE_PROJECT_YAML
+        sync: false  # base64: project.yaml (Infura RPC 포함)
       - key: CRE_TARGET
         value: staging-settings  # 기본값, 필요시 변경
     healthCheckPath: /health_check
