@@ -167,6 +167,27 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 		creTarget = "staging-settings"
 	}
 
+	// 디버그: 환경 체크
+	fmt.Printf("DEBUG: projectRoot=%s, creTarget=%s\n", projectRoot, creTarget)
+	fmt.Printf("DEBUG: payload file=%s\n", tmpFile)
+
+	// 파일 존재 체크
+	if _, err := os.Stat(projectRoot + "/project.yaml"); err != nil {
+		fmt.Printf("DEBUG: project.yaml NOT FOUND: %v\n", err)
+	} else {
+		fmt.Println("DEBUG: project.yaml OK")
+	}
+	if _, err := os.Stat(projectRoot + "/go.mod"); err != nil {
+		fmt.Printf("DEBUG: go.mod NOT FOUND: %v\n", err)
+	} else {
+		fmt.Println("DEBUG: go.mod OK")
+	}
+	if _, err := os.Stat("/root/.cre/cre.yaml"); err != nil {
+		fmt.Printf("DEBUG: cre.yaml NOT FOUND: %v\n", err)
+	} else {
+		fmt.Println("DEBUG: cre.yaml OK")
+	}
+
 	// cre simulate 실행 (2분 타임아웃)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
