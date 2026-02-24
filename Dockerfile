@@ -26,7 +26,16 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     git \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Go 설치 (CRE 워크플로우 컴파일에 필요)
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then GOARCH="amd64"; else GOARCH="arm64"; fi && \
+    wget -q https://go.dev/dl/go1.25.5.linux-${GOARCH}.tar.gz && \
+    tar -C /usr/local -xzf go1.25.5.linux-${GOARCH}.tar.gz && \
+    rm go1.25.5.linux-${GOARCH}.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 # CRE CLI 설치
 RUN curl -sSL https://cre.chain.link/install.sh | bash
