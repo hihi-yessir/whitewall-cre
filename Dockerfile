@@ -65,17 +65,33 @@ ENV CRE_TARGET="staging-settings"
 # 포트 노출구
 EXPOSE 8080
 
-# 시작 스크립트 생성 (CRE credentials + project.yaml 설정 후 서버 실행)
+# 시작 스크립트 생성 (CRE credentials + project.yaml 설정 + 워크플로우 사전 컴파일 후 서버 실행)
 RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# 1. CRE credentials 설정\n\
 if [ -n "$CRE_CREDENTIALS" ]; then\n\
   mkdir -p /root/.cre\n\
   echo "$CRE_CREDENTIALS" | base64 -d > /root/.cre/cre.yaml\n\
   echo "CRE credentials configured"\n\
 fi\n\
+\n\
+# 2. project.yaml 설정\n\
 if [ -n "$CRE_PROJECT_YAML" ]; then\n\
   echo "$CRE_PROJECT_YAML" | base64 -d > /app/project.yaml\n\
   echo "CRE project.yaml configured"\n\
 fi\n\
+\n\
+# 3. CRE 워크플로우 사전 컴파일 (서버 시작 전)\n\
+echo "Pre-compiling CRE workflow..."\n\
+cd /app\n\
+if cre workflow build whitewall-access --target ${CRE_TARGET:-staging-settings} 2>&1; then\n\
+  echo "CRE workflow pre-compiled successfully"\n\
+else\n\
+  echo "CRE workflow build command not available, will compile on first request"\n\
+fi\n\
+\n\
+# 4. 서버 실행\n\
 exec ./server' > /app/start.sh && chmod +x /app/start.sh
 
 # 서버 실행
