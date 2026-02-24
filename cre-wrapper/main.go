@@ -57,11 +57,23 @@ type AccessResult struct {
 }
 
 func main() {
+	// Render에서 PORT 환경변수 사용
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// 9분마다 셀프 핑 시작
+	startSelfPing()
 
 	http.HandleFunc("/trigger", handleAccessRequest)
-	fmt.Println("CRE Wrapper Server running on :8080")
-	fmt.Println("   Endpoint: POST /trigger")
-	http.ListenAndServe(":8080", nil)
+	http.HandleFunc("/health", handleHealth)
+
+	fmt.Printf("CRE Wrapper Server running on :%s\n", port)
+	fmt.Println("   Endpoints:")
+	fmt.Println("   - POST /trigger (CRE workflow)")
+	fmt.Println("   - GET  /health_check  (health check)")
+	http.ListenAndServe(":"+port, nil)
 }
 
 func handleAccessRequest(w http.ResponseWriter, r *http.Request) {
@@ -136,8 +148,11 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 	tmpFile := "/tmp/cre_payload.json"
 	os.WriteFile(tmpFile, []byte(payload), 0644)
 
-	// 프로젝트 루트
-	projectRoot, _ := filepath.Abs("..")
+	// 프로젝트 루트 (Docker에서는 /app, 로컬에서는 상위 디렉토리)
+	projectRoot := os.Getenv("CRE_PROJECT_ROOT")
+	if projectRoot == "" {
+		projectRoot, _ = filepath.Abs("..")
+	}
 
 	// cre simulate 실행
 	cmd := exec.Command("cre", "workflow", "simulate",
@@ -146,6 +161,7 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 		"--http-payload", "@"+tmpFile,
 		"--non-interactive",
 		"--trigger-index", "0",
+		"--broadcast",
 	)
 	cmd.Dir = projectRoot
 

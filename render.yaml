@@ -1,0 +1,17 @@
+# Render Blueprint - CRE Wrapper Service
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: whitewall-cre-wrapper
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon  # or singapore, frankfurt, ohio
+    plan: starter  # free, starter, standard, pro
+    envVars:
+      - key: CRE_ETH_PRIVATE_KEY
+        sync: false  # Manual input required (secret)
+      - key: CRE_CREDENTIALS
+        sync: false  # cre.yaml 내용 (cre login 후 ~/.cre/cre.yaml)
+    healthCheckPath: /health_check
