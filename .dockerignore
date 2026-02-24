@@ -11,4 +11,8 @@ secrets.yaml
 
 # 배포에 불필요한 폴더
 cre-templates/
-contracts/       
+# contracts/ 중 generated 바인딩은 필요함
+contracts/evm/src/*.sol
+contracts/evm/script/
+contracts/evm/test/
+contracts/evm/lib/       

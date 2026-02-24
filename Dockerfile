@@ -49,6 +49,7 @@ COPY --from=builder /app/server ./server
 # CRE 워크플로우 및 Go 모듈 복사
 COPY go.mod go.sum ./
 COPY whitewall-access/ ./whitewall-access/
+COPY contracts/ ./contracts/
 
 # 환경변수 설정
 ENV PORT=8080
