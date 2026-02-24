@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -165,8 +167,11 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 		creTarget = "staging-settings"
 	}
 
-	// cre simulate 실행
-	cmd := exec.Command("cre", "workflow", "simulate",
+	// cre simulate 실행 (2분 타임아웃)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "cre", "workflow", "simulate",
 		"whitewall-access",
 		"--target", creTarget,
 		"--http-payload", "@"+tmpFile,
@@ -176,10 +181,14 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 	)
 	cmd.Dir = projectRoot
 
+	fmt.Println("CRE 시뮬레이션 시작...")
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
 	fmt.Printf("CRE 출력:\n%s\n", outputStr)
 
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("CRE execution timed out after 2 minutes")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("CRE execution failed: %v", err)
 	}
