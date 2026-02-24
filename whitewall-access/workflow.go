@@ -30,6 +30,7 @@ type Config struct {
 	WorldIDValidatorAddress     string `json:"worldIDValidatorAddress"`
 	StripeKYCValidatorAddress   string `json:"stripeKYCValidatorAddress"`
 	PlaidCreditValidatorAddress string `json:"plaidCreditValidatorAddress"`
+	ForwarderAddress            string `json:"forwarderAddress"`
 }
 
 type AccessRequest struct {
@@ -144,13 +145,13 @@ func runTierChecks(ctx *TierCheckContext) *AccessReport {
 		return report
 	}
 
-	// Tier 2 → 3: (확장용) 추가 체크
+	// Tier 2 → 3:
 	report = checkTier3(ctx)
 	if !canProceedToNextTier(report, 3) {
 		return report
 	}
 
-	// Tier 3 → 4: (확장용) 최상위 체크
+	// Tier 3 → 4:
 	report = checkTier4(ctx)
 
 	return report
@@ -347,7 +348,7 @@ func submitReport(config *Config, runtime cre.Runtime, report *AccessReport, log
 		return fmt.Errorf("failed to encode report: %w", err)
 	}
 
-	// 2. 서명된 Report 생성
+	// 2. DON 서명 생성
 	signedReport, err := runtime.GenerateReport(&cre.ReportRequest{
 		EncodedPayload: encodedReport,
 		EncoderName:    "evm",
@@ -358,7 +359,7 @@ func submitReport(config *Config, runtime cre.Runtime, report *AccessReport, log
 		return fmt.Errorf("failed to generate report: %w", err)
 	}
 
-	// 3. Consumer Contract에 제출
+	// 3. Forwarder를 통해 onsumer Contract에 제출
 	consumerAddr := common.HexToAddress(config.ConsumerAddress)
 	chainSelector, _ := evm.ChainSelectorFromName(config.ChainName)
 	evmClient := &evm.Client{ChainSelector: chainSelector}
@@ -372,7 +373,7 @@ func submitReport(config *Config, runtime cre.Runtime, report *AccessReport, log
 	}
 
 	logger.Info("Report submitted",
-		"txHash", writeResult.TxHash,
+		"txHash", common.BytesToHash(writeResult.TxHash).Hex(),
 		"status", writeResult.TxStatus,
 		"agentId", report.AgentID,
 		"tier", report.Tier,
