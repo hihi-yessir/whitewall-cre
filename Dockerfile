@@ -37,7 +37,8 @@ WORKDIR /app
 # 빌드된 서버 복사
 COPY --from=builder /app/server ./server
 
-# CRE 워크플로우 복사
+# CRE 프로젝트 설정 및 워크플로우 복사
+COPY project.yaml ./project.yaml
 COPY whitewall-access/ ./whitewall-access/
 
 # 환경변수 설정
