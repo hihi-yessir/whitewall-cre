@@ -51,6 +51,9 @@ COPY go.mod go.sum ./
 COPY whitewall-access/ ./whitewall-access/
 COPY contracts/ ./contracts/
 
+# Go 모듈 미리 다운로드 (런타임에 다운로드 안 하도록)
+RUN go mod download
+
 # 환경변수 설정
 ENV PORT=8080
 ENV CRE_PROJECT_ROOT=/app
