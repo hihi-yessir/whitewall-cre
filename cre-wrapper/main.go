@@ -67,13 +67,18 @@ func main() {
 	startSelfPing()
 
 	http.HandleFunc("/trigger", handleAccessRequest)
-	http.HandleFunc("/health", handleHealth)
+	http.HandleFunc("/health_check", handleHealth)
 
-	fmt.Printf("CRE Wrapper Server running on :%s\n", port)
+	addr := "0.0.0.0:" + port
+	fmt.Printf("CRE Wrapper Server running on %s\n", addr)
 	fmt.Println("   Endpoints:")
 	fmt.Println("   - POST /trigger (CRE workflow)")
 	fmt.Println("   - GET  /health_check  (health check)")
-	http.ListenAndServe(":"+port, nil)
+
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		fmt.Printf("Server failed to start: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func handleAccessRequest(w http.ResponseWriter, r *http.Request) {
