@@ -154,10 +154,16 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 		projectRoot, _ = filepath.Abs("..")
 	}
 
+	// CRE 타겟 설정 (환경변수 또는 기본값)
+	creTarget := os.Getenv("CRE_TARGET")
+	if creTarget == "" {
+		creTarget = "staging-settings"
+	}
+
 	// cre simulate 실행
 	cmd := exec.Command("cre", "workflow", "simulate",
 		"whitewall-access",
-		"--target", "staging-settings",
+		"--target", creTarget,
 		"--http-payload", "@"+tmpFile,
 		"--non-interactive",
 		"--trigger-index", "0",
