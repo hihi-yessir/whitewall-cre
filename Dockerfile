@@ -46,7 +46,8 @@ WORKDIR /app
 # 빌드된 서버 복사
 COPY --from=builder /app/server ./server
 
-# CRE 워크플로우 복사 (project.yaml은 환경변수에서 생성)
+# CRE 워크플로우 및 Go 모듈 복사
+COPY go.mod go.sum ./
 COPY whitewall-access/ ./whitewall-access/
 
 # 환경변수 설정
