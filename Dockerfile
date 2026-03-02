@@ -84,14 +84,15 @@ fi\n\
 \n\
 # 3. CRE 워크플로우 사전 컴파일 (서버 시작 전)\n\
 echo "Pre-compiling CRE workflow..."\n\
-cd /app\n\
-if cre workflow build whitewall-access --target ${CRE_TARGET:-staging-settings} 2>&1; then\n\
+cd /app/whitewall-access\n\
+if cre workflow build . --target ${CRE_TARGET:-staging-settings} 2>&1; then\n\
   echo "CRE workflow pre-compiled successfully"\n\
 else\n\
   echo "CRE workflow build command not available, will compile on first request"\n\
 fi\n\
 \n\
 # 4. 서버 실행\n\
+cd /app\n\
 exec ./server' > /app/start.sh && chmod +x /app/start.sh
 
 # 서버 실행

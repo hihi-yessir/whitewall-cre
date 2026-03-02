@@ -186,7 +186,7 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 	}
 
 	// 디버그: 환경 체크
-	fmt.Printf("DEBUG: projectRoot=%s, creTarget=%s\n", projectRoot, creTarget)
+	fmt.Printf("DEBUG: projectRoot=%s, workflowDir=%s, creTarget=%s\n", projectRoot, workflowDir, creTarget)
 	fmt.Printf("DEBUG: payload file=%s\n", tmpFile)
 
 	// 파일 존재 체크
@@ -195,10 +195,10 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 	} else {
 		fmt.Println("DEBUG: project.yaml OK")
 	}
-	if _, err := os.Stat(projectRoot + "/go.mod"); err != nil {
-		fmt.Printf("DEBUG: go.mod NOT FOUND: %v\n", err)
+	if _, err := os.Stat(workflowDir + "/secrets.yaml"); err != nil {
+		fmt.Printf("DEBUG: secrets.yaml NOT FOUND: %v\n", err)
 	} else {
-		fmt.Println("DEBUG: go.mod OK")
+		fmt.Println("DEBUG: secrets.yaml OK")
 	}
 	if _, err := os.Stat("/root/.cre/cre.yaml"); err != nil {
 		fmt.Printf("DEBUG: cre.yaml NOT FOUND: %v\n", err)
@@ -206,19 +206,22 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 		fmt.Println("DEBUG: cre.yaml OK")
 	}
 
+	// workflow 디렉토리로 이동해서 실행 (secrets.yaml 경로 문제 해결)
+	workflowDir := filepath.Join(projectRoot, "whitewall-access")
+
 	// cre simulate 실행 (2분 타임아웃)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "cre", "workflow", "simulate",
-		"whitewall-access",
+		".", // 현재 디렉토리 (whitewall-access)
 		"--target", creTarget,
 		"--http-payload", "@"+tmpFile,
 		"--non-interactive",
 		"--trigger-index", "0",
 		"--broadcast",
 	)
-	cmd.Dir = projectRoot
+	cmd.Dir = workflowDir
 
 	fmt.Println("CRE 시뮬레이션 시작...")
 	output, err := cmd.CombinedOutput()
@@ -409,11 +412,14 @@ func runLogTriggerSimulate(txHash string, triggerIndex string) {
 		creTarget = "staging-settings"
 	}
 
+	// workflow 디렉토리로 이동해서 실행 (secrets.yaml 경로 문제 해결)
+	workflowDir := filepath.Join(projectRoot, "whitewall-access")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "cre", "workflow", "simulate",
-		"whitewall-access",
+		".", // 현재 디렉토리 (whitewall-access)
 		"--target", creTarget,
 		"--evm-tx-hash", txHash,
 		"--evm-event-index", "0", //트잭에서  첫번째 이벤트 ㅇㅇ
@@ -421,7 +427,7 @@ func runLogTriggerSimulate(txHash string, triggerIndex string) {
 		"--non-interactive",
 		"--broadcast",
 	)
-	cmd.Dir = projectRoot
+	cmd.Dir = workflowDir
 
 	fmt.Printf("Running CRE simulate for Log trigger (txHash=%s, index=%s)\n", txHash, triggerIndex)
 	output, err := cmd.CombinedOutput()
