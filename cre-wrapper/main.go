@@ -185,6 +185,9 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 		creTarget = "staging-settings"
 	}
 
+	// workflow 디렉토리 (secrets.yaml 경로)
+	workflowDir := filepath.Join(projectRoot, "whitewall-access")
+
 	// 디버그: 환경 체크
 	fmt.Printf("DEBUG: projectRoot=%s, workflowDir=%s, creTarget=%s\n", projectRoot, workflowDir, creTarget)
 	fmt.Printf("DEBUG: payload file=%s\n", tmpFile)
@@ -205,9 +208,6 @@ func runCRESimulate(agentId int) (*AccessResult, error) {
 	} else {
 		fmt.Println("DEBUG: cre.yaml OK")
 	}
-
-	// workflow 디렉토리로 이동해서 실행 (secrets.yaml 경로 문제 해결)
-	workflowDir := filepath.Join(projectRoot, "whitewall-access")
 
 	// cre simulate 실행 (2분 타임아웃)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
