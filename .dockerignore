@@ -5,9 +5,9 @@
 # Documentation
 *.md
 
-# Secrets
+# Secrets (실제 시크릿만 제외, secrets.yaml은 키 이름만 있어서 배포 필요)
 .env
-secrets.yaml
+# secrets.yaml - 이건 DON Vault 키 이름만 있어서 필요함!
 
 # 배포에 불필요한 폴더
 cre-templates/

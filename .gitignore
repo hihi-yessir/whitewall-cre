@@ -1,4 +1,4 @@
 *.env
-secrets.yaml
 project.yaml
 *.wasm
+# secrets.yaml는 키 이름만 있음 (실제 값은 DON Vault) - 배포 필요!
