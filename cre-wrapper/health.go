@@ -33,7 +33,6 @@ func startSelfPing() {
 	renderURL := os.Getenv("RENDER_EXTERNAL_URL")
 	if renderURL == "" {
 		fmt.Println("RENDER_EXTERNAL_URL not set, self-ping disabled")
-		fmt.Println("   (로컬 환경에서는 self-ping 필요 없음)")
 		return
 	}
 

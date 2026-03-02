@@ -14,14 +14,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/joho/godotenv"
 )
 
 // authorizedKeys (workflow.yaml과 동일하게)
 var authorizedSigners = map[string]bool{
 	"0x0d10f69243b8a2fe4299fa4cc115c3023f4011cf": true,
 }
+
+// Validator 주소들
+const (
+	ValidationRegistryAddr   = "0x8004Cb1BF31DAf7788923b405b754f57acEB4272" // 나중에 받으면 추가
+	StripeKYCValidatorAddr   = "0x12b456dcc0e669eeb1d96806c8ef87b713d39cc8"
+	PlaidCreditValidatorAddr = "0x9a0ed706f1714961bf607404521a58decddc2636"
+)
+
+// ValidationRequest 이벤트 시그니처
+var ValidationRequestTopic = crypto.Keccak256Hash([]byte("ValidationRequest(address,uint256,string,bytes32)"))
 
 // JSON-RPC 요청 구조체
 type JSONRPCRequest struct {
@@ -60,6 +74,7 @@ type AccessResult struct {
 
 func main() {
 	// Render에서 PORT 환경변수 사용
+	_ = godotenv.Load("../.env")
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -67,9 +82,12 @@ func main() {
 
 	// 9분마다 셀프 핑 시작
 	startSelfPing()
+	//
+	go startEventListener()
 
 	http.HandleFunc("/trigger", handleAccessRequest)
 	http.HandleFunc("/health_check", handleHealth)
+	http.HandleFunc("/api/plaid/proxy", handlePlaidProxy)
 
 	addr := "0.0.0.0:" + port
 	fmt.Printf("CRE Wrapper Server running on %s\n", addr)
@@ -297,4 +315,119 @@ func verifySignature(input map[string]interface{}, signature string, signer stri
 		recoveredAddr.Hex(), expectedAddr.Hex(), isValid)
 
 	return isValid
+}
+
+// =================
+func startEventListener() {
+	// 환경변수에서 WebSocket RPC URL 읽기
+	wsRpcUrl := os.Getenv("RPC_URL")
+	if wsRpcUrl == "" {
+		fmt.Println("RPC_URL not set, skipping event listener")
+		return
+	}
+
+	// ValidationRegistry 주소 확인
+	if ValidationRegistryAddr == "" || ValidationRegistryAddr == "0x..." {
+		fmt.Println("ValidationRegistryAddr not set, skipping event listener")
+		return
+	}
+
+	fmt.Println("Starting ValidationRegistry event listener...")
+
+	// 1. WebSocket 연결
+	client, err := ethclient.Dial(wsRpcUrl)
+	if err != nil {
+		fmt.Printf("Failed to connect to WebSocket: %v\n", err)
+		return
+	}
+	defer client.Close()
+
+	// 2. ValidationRegistry 주소
+	registryAddr := common.HexToAddress(ValidationRegistryAddr)
+
+	// 3. 이벤트 필터 설정
+	query := ethereum.FilterQuery{
+		Addresses: []common.Address{registryAddr},
+		Topics:    [][]common.Hash{{ValidationRequestTopic}},
+	}
+
+	// 4. 이벤트 구독
+	logs := make(chan types.Log)
+	sub, err := client.SubscribeFilterLogs(context.Background(), query, logs)
+	if err != nil {
+		fmt.Printf("Failed to subscribe to logs: %v\n", err)
+		return
+	}
+	defer sub.Unsubscribe()
+
+	fmt.Println("Listening for ValidationRequest events...")
+
+	// 5. 이벤트 처리 루프
+	for {
+		select {
+		case err := <-sub.Err():
+			fmt.Printf("Subscription error: %v\n", err)
+			return
+		case vLog := <-logs:
+			handleValidationEvent(vLog)
+		}
+	}
+}
+func handleValidationEvent(vLog types.Log) {
+	txHash := vLog.TxHash.Hex()
+
+	// indexed 필드에서 validator 주소 추출 (topic[1])
+	validatorAddr := common.BytesToAddress(vLog.Topics[1].Bytes())
+
+	fmt.Printf("ValidationRequest detected! txHash=%s, validator=%s\n",
+		txHash, validatorAddr.Hex())
+
+	// trigger-index 결정
+	var triggerIndex string
+	switch strings.ToLower(validatorAddr.Hex()) {
+	case strings.ToLower(StripeKYCValidatorAddr):
+		triggerIndex = "1" // KYC
+	case strings.ToLower(PlaidCreditValidatorAddr):
+		triggerIndex = "2" // Credit
+	default:
+		fmt.Println("Unknown validator, skipping")
+		return
+	}
+
+	// CRE simulate 실행
+	go runLogTriggerSimulate(txHash, triggerIndex)
+}
+
+func runLogTriggerSimulate(txHash string, triggerIndex string) {
+	projectRoot := os.Getenv("CRE_PROJECT_ROOT")
+	if projectRoot == "" {
+		projectRoot, _ = filepath.Abs("..")
+	}
+
+	creTarget := os.Getenv("CRE_TARGET")
+	if creTarget == "" {
+		creTarget = "staging-settings"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "cre", "workflow", "simulate",
+		"whitewall-access",
+		"--target", creTarget,
+		"--evm-tx-hash", txHash,
+		"--evm-event-index", "0", //트잭에서  첫번째 이벤트 ㅇㅇ
+		"--trigger-index", triggerIndex,
+		"--non-interactive",
+		"--broadcast",
+	)
+	cmd.Dir = projectRoot
+
+	fmt.Printf("Running CRE simulate for Log trigger (txHash=%s, index=%s)\n", txHash, triggerIndex)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		fmt.Printf("Log trigger simulation failed: %v\n", err)
+	}
+	fmt.Printf("Log trigger output:\n%s\n", string(output))
 }

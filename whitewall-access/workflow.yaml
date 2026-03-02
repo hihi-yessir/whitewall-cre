@@ -4,7 +4,7 @@ staging-settings:
   workflow-artifacts:
     workflow-path: "."
     config-path: "./config.staging.json" 
-    secrets-path: "" 
+    secrets-path: "./secrets.yaml" 
   
 
 production-settings:
@@ -13,12 +13,13 @@ production-settings:
   workflow-artifacts:
     workflow-path: "."
     config-path: "./config.staging.json"
-    secrets-path: ""
+    secrets-path: "./secrets.yaml"
 
 capabilities:
   - name: "evm-read"
   - name: "evm-write"
   - name: "report-encoder"
+  - name: "confidential-http"
 
 authorizedKeys:
   - "0x0d10F69243B8A2FE4299FA4cC115c3023F4011CF"
