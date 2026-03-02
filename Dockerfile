@@ -82,17 +82,20 @@ if [ -n "$CRE_PROJECT_YAML" ]; then\n\
   echo "CRE project.yaml configured"\n\
 fi\n\
 \n\
-# 3. CRE 워크플로우 사전 컴파일 (서버 시작 전)\n\
+# 3. secrets.yaml, config 심링크 생성 (CRE 경로 문제 해결)\n\
+ln -sf /app/whitewall-access/secrets.yaml /app/secrets.yaml\n\
+ln -sf /app/whitewall-access/config.staging.json /app/config.staging.json\n\
+\n\
+# 4. CRE 워크플로우 사전 컴파일 (서버 시작 전)\n\
 echo "Pre-compiling CRE workflow..."\n\
-cd /app/whitewall-access\n\
-if cre workflow build . --target ${CRE_TARGET:-staging-settings} 2>&1; then\n\
+cd /app\n\
+if cre workflow build whitewall-access --target ${CRE_TARGET:-staging-settings} 2>&1; then\n\
   echo "CRE workflow pre-compiled successfully"\n\
 else\n\
   echo "CRE workflow build command not available, will compile on first request"\n\
 fi\n\
 \n\
-# 4. 서버 실행\n\
-cd /app\n\
+# 5. 서버 실행\n\
 exec ./server' > /app/start.sh && chmod +x /app/start.sh
 
 # 서버 실행
