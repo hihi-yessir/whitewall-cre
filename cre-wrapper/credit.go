@@ -161,14 +161,14 @@ func exchangePublicToken(clientID, secret, publicToken string) (string, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 
+	// HTTP 상태 코드로 먼저 에러 체크 (Plaid는 에러 시 4xx 반환)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("plaid API error (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
 	var tokenResp PlaidTokenExchangeResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return "", fmt.Errorf("parse error: %w", err)
-	}
-
-	if tokenResp.Error != nil {
-		return "", fmt.Errorf("plaid error: %s - %s",
-			tokenResp.Error.ErrorCode, tokenResp.Error.ErrorMessage)
 	}
 
 	return tokenResp.AccessToken, nil
@@ -195,14 +195,14 @@ func getAccountBalance(clientID, secret, accessToken string) (*PlaidBalanceRespo
 
 	body, _ := io.ReadAll(resp.Body)
 
+	// HTTP 상태 코드로 먼저 에러 체크
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plaid API error (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
 	var balanceResp PlaidBalanceResponse
 	if err := json.Unmarshal(body, &balanceResp); err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
-	}
-
-	if balanceResp.Error != nil {
-		return nil, fmt.Errorf("plaid error: %s - %s",
-			balanceResp.Error.ErrorCode, balanceResp.Error.ErrorMessage)
 	}
 
 	return &balanceResp, nil
