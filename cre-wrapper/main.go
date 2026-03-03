@@ -351,16 +351,26 @@ func startEventListener() {
 		return
 	}
 
-	fmt.Println("Starting ValidationRegistry event listener...")
-
-	// 0. CRE Worker 시작 (동시 실행 제한)
+	// CRE Worker 시작 (한 번만)
 	go startCREWorker()
 
+	// 재연결 루프
+	for {
+		fmt.Println("Connecting to ValidationRegistry event listener...")
+		err := runEventSubscription(wsRpcUrl)
+		if err != nil {
+			fmt.Printf("Event subscription ended: %v\n", err)
+		}
+		fmt.Println("Reconnecting in 5 seconds...")
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func runEventSubscription(wsRpcUrl string) error {
 	// 1. WebSocket 연결
 	client, err := ethclient.Dial(wsRpcUrl)
 	if err != nil {
-		fmt.Printf("Failed to connect to WebSocket: %v\n", err)
-		return
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 	defer client.Close()
 
@@ -377,8 +387,7 @@ func startEventListener() {
 	logs := make(chan types.Log)
 	sub, err := client.SubscribeFilterLogs(context.Background(), query, logs)
 	if err != nil {
-		fmt.Printf("Failed to subscribe to logs: %v\n", err)
-		return
+		return fmt.Errorf("failed to subscribe: %w", err)
 	}
 	defer sub.Unsubscribe()
 
@@ -388,8 +397,7 @@ func startEventListener() {
 	for {
 		select {
 		case err := <-sub.Err():
-			fmt.Printf("Subscription error: %v\n", err)
-			return
+			return fmt.Errorf("subscription error: %w", err)
 		case vLog := <-logs:
 			handleValidationEvent(vLog)
 		}

@@ -150,6 +150,11 @@ func submitKYCReport(
 	chainSelector, _ := evm.ChainSelectorFromName(config.ChainName)
 	evmClient := &evm.Client{ChainSelector: chainSelector}
 
+	logger.Info("KYC WriteReport 준비중",
+		"configGasLimit", config.GasLimit,
+		"receiver", validatorAddr.Hex(),
+		"chain", config.ChainName)
+
 	writeResult, err := evmClient.WriteReport(runtime, &evm.WriteCreReportRequest{
 		Receiver: validatorAddr.Bytes(),
 		Report:   signedReport,

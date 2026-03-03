@@ -308,14 +308,23 @@ func submitReport(config *Config, runtime cre.Runtime, report *AccessReport, log
 		return fmt.Errorf("failed to generate report: %w", err)
 	}
 
-	// 3. Forwarder를 통해 onsumer Contract에 제출
+	// 3. Forwarder를 통해 Consumer Contract에 제출
 	consumerAddr := common.HexToAddress(config.ConsumerAddress)
 	chainSelector, _ := evm.ChainSelectorFromName(config.ChainName)
 	evmClient := &evm.Client{ChainSelector: chainSelector}
 
+	// Gas limit 로깅 (config에서 읽은 값 확인)
+	logger.Info("WriteReport 준비중",
+		"configGasLimit", config.GasLimit,
+		"consumer", config.ConsumerAddress,
+		"chain", config.ChainName)
+
 	writeResult, err := evmClient.WriteReport(runtime, &evm.WriteCreReportRequest{
 		Receiver: consumerAddr.Bytes(),
 		Report:   signedReport,
+		GasConfig: &evm.GasConfig{
+			GasLimit: config.GasLimit,
+		},
 	}).Await()
 	if err != nil {
 		return fmt.Errorf("failed to write report: %w", err)
@@ -324,6 +333,7 @@ func submitReport(config *Config, runtime cre.Runtime, report *AccessReport, log
 	logger.Info("Report submitted",
 		"txHash", common.BytesToHash(writeResult.TxHash).Hex(),
 		"status", writeResult.TxStatus,
+		"gasLimitUsed", config.GasLimit,
 		"agentId", report.AgentID,
 		"tier", report.Tier,
 		"approved", report.Approved)
