@@ -317,6 +317,25 @@ func verifySignature(input map[string]interface{}, signature string, signer stri
 	return isValid
 }
 
+// ================= CRE Worker Pool =================
+// RAM 제한으로 CRE 동시 실행 수 제한 (1개씩 순차 처리)
+
+type CREJob struct {
+	TxHash       string
+	TriggerIndex string
+}
+
+var creJobQueue = make(chan CREJob, 100) // 최대 100개 대기
+
+func startCREWorker() {
+	fmt.Println("CRE Worker started (max 1 concurrent)")
+	for job := range creJobQueue {
+		fmt.Printf("CRE Worker processing: txHash=%s, triggerIndex=%s (queue size: %d)\n",
+			job.TxHash, job.TriggerIndex, len(creJobQueue))
+		runLogTriggerSimulate(job.TxHash, job.TriggerIndex)
+	}
+}
+
 // =================
 func startEventListener() {
 	// 환경변수에서 WebSocket RPC URL 읽기
@@ -333,6 +352,9 @@ func startEventListener() {
 	}
 
 	fmt.Println("Starting ValidationRegistry event listener...")
+
+	// 0. CRE Worker 시작 (동시 실행 제한)
+	go startCREWorker()
 
 	// 1. WebSocket 연결
 	client, err := ethclient.Dial(wsRpcUrl)
@@ -394,8 +416,13 @@ func handleValidationEvent(vLog types.Log) {
 		return
 	}
 
-	// CRE simulate 실행
-	go runLogTriggerSimulate(txHash, triggerIndex)
+	// CRE Job 큐에 추가 (Worker가 순차 처리)
+	select {
+	case creJobQueue <- CREJob{TxHash: txHash, TriggerIndex: triggerIndex}:
+		fmt.Printf("Job queued (queue size: %d)\n", len(creJobQueue))
+	default:
+		fmt.Println("WARNING: CRE job queue full, dropping job!")
+	}
 }
 
 func runLogTriggerSimulate(txHash string, triggerIndex string) {
