@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -16,12 +17,12 @@ import (
 	"whitewall-cre/contracts/evm/src/generated/validation_registry"
 )
 
-// Credit Validation Flow:
+// Credit Validation Flow (TEE 기반):
 // 1. ValidationRegistry event → CreditValidator 주소 확인
 // 2. RequestURI에서 "plaid:" 제거 → public_token 추출
-// 3. Confidential HTTP로 Proxy 호출 (client_id, secret은 DON Vault에서 template injection)
-// 4. Proxy가 Plaid API 호출 → score 반환
-// 5. CRE에서 DON 서명 + Report 제출
+// 3. Confidential HTTP로 TEE Credit Oracle 호출 (client_id, secret은 DON Vault에서 template injection)
+// 4. TEE가 SGX Enclave 내에서 Plaid API 호출 → score + SGX Quote 반환
+// 5. CRE에서 V2 리포트 인코딩 (quote 포함) → DON 서명 → WriteReport
 
 func onCreditValidation(
 	config *Config,
@@ -51,30 +52,32 @@ func onCreditValidation(
 		"publicToken", tokenPreview,
 		"requestHash", common.BytesToHash(event.RequestHash[:]).Hex())
 
-	// 3. Proxy 호출 → score 반환
-	score, err := callPlaidProxy(config, runtime, event.AgentId, event.RequestHash, publicToken)
+	// 3. TEE Credit Oracle 호출 → score + quote 반환
+	score, sgxQuote, err := callTEECreditOracle(config, runtime, event.AgentId, event.RequestHash, publicToken)
 	if err != nil {
-		logger.Error("Failed to get score from proxy", "error", err)
+		logger.Error("Failed to get score from TEE", "error", err)
 		return nil, err
 	}
 
-	logger.Info("Credit score received from proxy",
+	logger.Info("Credit score received from TEE",
 		"agentId", event.AgentId,
-		"score", score)
+		"score", score,
+		"quoteLength", len(sgxQuote))
 
-	// 4. DON 서명 + Report 제출
-	return submitCreditReport(config, runtime, &event, score)
+	// 4. V2 리포트 인코딩 (quote 포함) → DON 서명 → WriteReport
+	return submitCreditReportV2(config, runtime, &event, score, sgxQuote)
 }
 
-// callPlaidProxy: Confidential HTTP로 Proxy 호출
+// callTEECreditOracle: Confidential HTTP로 TEE Credit Oracle 호출
 // client_id, secret은 DON Vault에서 template injection
-func callPlaidProxy(
+// TEE(Intel SGX)가 Plaid API 호출 후 score + SGX Quote 반환
+func callTEECreditOracle(
 	config *Config,
 	runtime cre.Runtime,
 	agentId *big.Int,
 	requestHash [32]byte,
 	publicToken string,
-) (uint8, error) {
+) (uint8, []byte, error) {
 	logger := runtime.Logger()
 	client := confidentialhttp.Client{}
 
@@ -87,20 +90,19 @@ func callPlaidProxy(
 		"requestHash": "%s"
 	}`, publicToken, agentId.String(), common.BytesToHash(requestHash[:]).Hex())
 
-	logger.Info("Calling Plaid proxy...",
-		"url", config.CreditProxyURL,
+	logger.Info("Calling TEE Credit Oracle...",
+		"url", config.CreditTEEUrl,
 		"agentId", agentId.String())
 
 	resp, err := client.SendRequest(runtime,
 		&confidentialhttp.ConfidentialHTTPRequest{
 			Request: &confidentialhttp.HTTPRequest{
-				Url:    config.CreditProxyURL,
+				Url:    config.CreditTEEUrl,
 				Method: "POST",
 				MultiHeaders: map[string]*confidentialhttp.HeaderValues{
 					"Content-Type": {Values: []string{"application/json"}},
 				},
 				Body: &confidentialhttp.HTTPRequest_BodyString{BodyString: body},
-				// EncryptOutput: false - score는 민감하지 않음
 			},
 			VaultDonSecrets: []*confidentialhttp.SecretIdentifier{
 				{Key: "PLAID_CLIENT_ID", Namespace: ""},
@@ -109,61 +111,82 @@ func callPlaidProxy(
 		}).Await()
 
 	if err != nil {
-		return 0, fmt.Errorf("proxy call failed: %w", err)
+		return 0, nil, fmt.Errorf("TEE call failed: %w", err)
 	}
 
-	logger.Info("Proxy response", "status", resp.StatusCode, "body", string(resp.Body))
+	logger.Info("TEE response received", "status", resp.StatusCode)
 
-	// 응답 파싱
-	var proxyResp struct {
+	// 응답 파싱 (score + quote)
+	var teeResp struct {
 		Score   uint8  `json:"score"`
 		Success bool   `json:"success"`
+		Quote   string `json:"quote"` // SGX DCAP Quote (hex string)
 		Error   string `json:"error,omitempty"`
 	}
-	if err := json.Unmarshal(resp.Body, &proxyResp); err != nil {
-		return 0, fmt.Errorf("failed to parse proxy response: %w", err)
+	if err := json.Unmarshal(resp.Body, &teeResp); err != nil {
+		return 0, nil, fmt.Errorf("failed to parse TEE response: %w", err)
 	}
 
-	if !proxyResp.Success {
-		return 0, fmt.Errorf("proxy error: %s", proxyResp.Error)
+	if !teeResp.Success {
+		return 0, nil, fmt.Errorf("TEE error: %s", teeResp.Error)
 	}
 
-	return proxyResp.Score, nil
+	// Quote hex string → bytes
+	sgxQuote := common.FromHex(teeResp.Quote)
+	logger.Info("SGX Quote received", "quoteLength", len(sgxQuote))
+
+	return teeResp.Score, sgxQuote, nil
 }
 
-// submitCreditReport: DON 서명 후 온체인 제출
-func submitCreditReport(
+// submitCreditReportV2: V2 리포트 인코딩 (SGX Quote 포함) → DON 서명 → WriteReport
+// V2 인코딩: abi.encode(agentId, score, requestHash, dataHash, sgxQuote)
+func submitCreditReportV2(
 	config *Config,
 	runtime cre.Runtime,
 	event *validation_registry.ValidationRequestDecoded,
 	score uint8,
+	sgxQuote []byte,
 ) (*CreditReport, error) {
 	logger := runtime.Logger()
 
-	// tokenHash는 requestHash 재사용
-	tokenHash := event.RequestHash
+	// dataHash 계산: sha256("agent:{agentId}|hash:{requestHash}|score:{score}")
+	// TEE가 생성한 reportData와 동일한 형식
+	dataString := fmt.Sprintf("agent:%s|hash:%s|score:%d",
+		event.AgentId.String(),
+		common.BytesToHash(event.RequestHash[:]).Hex(),
+		score)
+	dataHash := sha256.Sum256([]byte(dataString))
 
-	// ABI 인코딩
+	logger.Info("V2 Report encoding",
+		"dataString", dataString,
+		"dataHash", common.BytesToHash(dataHash[:]).Hex())
+
+	// V2 ABI 인코딩: (agentId, score, requestHash, dataHash, sgxQuote)
 	uint256Type, _ := abi.NewType("uint256", "", nil)
 	uint8Type, _ := abi.NewType("uint8", "", nil)
 	bytes32Type, _ := abi.NewType("bytes32", "", nil)
+	bytesType, _ := abi.NewType("bytes", "", nil)
 
 	args := abi.Arguments{
 		{Name: "agentId", Type: uint256Type},
 		{Name: "score", Type: uint8Type},
 		{Name: "requestHash", Type: bytes32Type},
-		{Name: "tokenHash", Type: bytes32Type},
+		{Name: "dataHash", Type: bytes32Type},
+		{Name: "sgxQuote", Type: bytesType},
 	}
 
 	encodedReport, err := args.Pack(
 		event.AgentId,
 		score,
 		event.RequestHash,
-		tokenHash,
+		dataHash,
+		sgxQuote,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode credit report: %w", err)
+		return nil, fmt.Errorf("failed to encode V2 credit report: %w", err)
 	}
+
+	logger.Info("V2 Report encoded", "reportLength", len(encodedReport))
 
 	// DON 서명
 	signedReport, err := runtime.GenerateReport(&cre.ReportRequest{
@@ -181,10 +204,11 @@ func submitCreditReport(
 	chainSelector, _ := evm.ChainSelectorFromName(config.ChainName)
 	evmClient := &evm.Client{ChainSelector: chainSelector}
 
-	logger.Info("Credit WriteReport 준비중",
+	logger.Info("Credit V2 WriteReport 준비중",
 		"configGasLimit", config.GasLimit,
 		"receiver", validatorAddr.Hex(),
-		"chain", config.ChainName)
+		"chain", config.ChainName,
+		"quoteLength", len(sgxQuote))
 
 	writeResult, err := evmClient.WriteReport(runtime, &evm.WriteCreReportRequest{
 		Receiver: validatorAddr.Bytes(),
@@ -194,10 +218,10 @@ func submitCreditReport(
 		},
 	}).Await()
 	if err != nil {
-		return nil, fmt.Errorf("failed to write credit report: %w", err)
+		return nil, fmt.Errorf("failed to write V2 credit report: %w", err)
 	}
 
-	logger.Info("Credit report submitted",
+	logger.Info("Credit V2 report submitted",
 		"txHash", common.BytesToHash(writeResult.TxHash).Hex(),
 		"agentId", event.AgentId,
 		"score", score)
@@ -206,6 +230,6 @@ func submitCreditReport(
 		AgentID:     event.AgentId,
 		Score:       score,
 		RequestHash: event.RequestHash,
-		TokenHash:   tokenHash,
+		TokenHash:   dataHash, // V2에서는 dataHash를 TokenHash 필드에 저장
 	}, nil
 }

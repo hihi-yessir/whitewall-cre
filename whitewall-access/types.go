@@ -23,7 +23,7 @@ type Config struct {
 	ForwarderAddress            string `json:"forwarderAddress"`
 	ValidationRegistryAddress   string `json:"validationRegistryAddress"`
 	GasLimit                    uint64 `json:"gasLimit"`
-	CreditProxyURL              string `json:"creditProxyUrl"` // Plaid proxy URL for credit score calculation
+	CreditTEEUrl string `json:"creditTEEUrl"` // TEE Credit Oracle URL (Intel SGX)
 }
 
 // ===== Request/Response Types =====
