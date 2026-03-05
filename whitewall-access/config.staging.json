@@ -7,6 +7,6 @@
   "plaidCreditValidatorAddress":"0x9a0ed706f1714961bf607404521a58decddc2636",
   "forwarderAddress":"0x82300bd7c3958625581cc2f77bc6464dcecdf3e5",
   "validationRegistryAddress":"0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
-  "gasLimit":3000000,
+  "gasLimit":10000000,
   "creditTEEUrl":"https://demo-tee.whitewall.network/credit"
 }
