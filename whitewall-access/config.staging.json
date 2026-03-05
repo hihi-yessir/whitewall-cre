@@ -8,5 +8,5 @@
   "forwarderAddress":"0x82300bd7c3958625581cc2f77bc6464dcecdf3e5",
   "validationRegistryAddress":"0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
   "gasLimit":1000000,
-  "creditProxyUrl":"https://whitewall-cre.onrender.com/api/plaid/proxy"
+  "creditTEEUrl":"https://demo-tee.whitewall.network/credit"
 }
