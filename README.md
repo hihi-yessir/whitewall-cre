@@ -1,5 +1,8 @@
 <div align="center">
 
+<img src="assets/banner.svg" alt="whitewall-cre" width="100%" />
+
+
 # whitewall-cre
 
 **Chainlink CRE workflows for Whitewall OS**
