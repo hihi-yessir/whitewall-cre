@@ -24,14 +24,14 @@ import (
 
 // authorizedKeys (workflow.yaml과 동일하게)
 var authorizedSigners = map[string]bool{
-	"0x0d10f69243b8a2fe4299fa4cc115c3023f4011cf": true,
+	"0x0d10f69243b8a2fe4299fa4cc115c3023f4011cf": true, //HTTP Trigger 검증
 }
 
 // Validator 주소들
 const (
-	ValidationRegistryAddr   = "0x8004Cb1BF31DAf7788923b405b754f57acEB4272" // 나중에 받으면 추가
-	StripeKYCValidatorAddr   = "0x12b456dcc0e669eeb1d96806c8ef87b713d39cc8"
-	PlaidCreditValidatorAddr = "0x9a0ed706f1714961bf607404521a58decddc2636"
+	ValidationRegistryAddr   = "0x8004Cb1BF31DAf7788923b405b754f57acEB4272" //
+	StripeKYCValidatorAddr   = "0xebba79075ad00a22c5ff9a1f36a379f577265936" // 이벤트 분기용
+	PlaidCreditValidatorAddr = "0x07e8653b55a3cd703106c9726a140755204c1ad5" // 이벤트 분기용
 )
 
 // ValidationRequest 이벤트 시그니처
