@@ -137,6 +137,6 @@ go run .
 
 | Repository | Role |
 |:-----------|:-----|
-| [**Verified-Agent-Hub**](https://github.com/hihi-yessir/Verified-Agent-Hub) | Smart contracts, ACE policies, validators, SDK |
+| [**whitewall-os**](https://github.com/hihi-yessir/whitewall-os) | Smart contracts, ACE policies, validators, SDK |
 | [**whitewall**](https://github.com/hihi-yessir/whitewall) | Demo frontend |
 | [**x402-auth-gateway**](https://github.com/hihi-yessir/x402-auth-gateway) | Payment-gated proxy (triggers access workflow) |
